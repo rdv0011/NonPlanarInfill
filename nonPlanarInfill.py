@@ -17,15 +17,18 @@ import math
 import sys
 import logging
 import argparse
+import os
 
+# Get the directory where the script is located
+script_dir = os.path.dirname(os.path.abspath(__file__))
 
+# Configure logging to save in the script's directory
+log_file_path = os.path.join(script_dir, "gcode_debug.log")
 logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler("gcode_debug.log"),
-        logging.StreamHandler(sys.stdout)
-    ]
+    filename=log_file_path,
+    filemode="w",
+    level=logging.INFO,
+    format="%(asctime)s - %(message)s"
 )
 
 # Default parameters for non-planar infill modulation
@@ -63,7 +66,7 @@ def process_gcode(input_file, amplitude, frequency):
 
     logging.info(f"Processing file: {input_file}")
 
-    with open(input_file, 'r') as file:
+    with open(input_file, 'r+') as file:
         lines = file.readlines()
 
     solid_infill_heights = []
@@ -72,7 +75,7 @@ def process_gcode(input_file, amplitude, frequency):
             z_match = re.search(r'Z([-+]?\d*\.?\d+)', line)
             if z_match:
                 current_z = float(z_match.group(1))
-        if ';TYPE:Solid infill' in line:
+        if ';TYPE:Solid infill' in line or ';TYPE:Internal solid infill' in line:
             solid_infill_heights.append(current_z)
 
     def update_layer_bounds(current_z):
@@ -93,7 +96,7 @@ def process_gcode(input_file, amplitude, frequency):
                 update_layer_bounds(current_z)
                 logging.debug(f"Layer change detected: Z = {current_z}")
 
-        if ';TYPE:Internal infill' in line:
+        if ';TYPE:Internal infill' in line or ';TYPE:Sparse infill' in line:
             in_infill = True
             logging.debug(f"Entered infill section at line {line_num}.")
         elif line.startswith(';TYPE:'):
@@ -103,7 +106,8 @@ def process_gcode(input_file, amplitude, frequency):
 
         if in_infill and line_num not in processed_indices and 'E' in line:
             processed_indices.add(line_num)
-            match = re.search(r'X([-+]?\d*\.?\d+)\s*Y([-+]?\d*\.?\d+)\s*E([-+]?\d*\.?\d+)', line)
+            pattern = r'X([-+]?\d*\.\d+|\d+).*?Y([-+]?\d*\.\d+|\d+).*?E([-+]?\d*\.\d+|\d+)'
+            match = re.search(pattern, line)
             if match:
                 x1 = float(match.group(1))
                 y1 = float(match.group(2))
@@ -112,7 +116,7 @@ def process_gcode(input_file, amplitude, frequency):
                 next_line_index = line_num + 1
                 if next_line_index < len(lines):
                     next_line = lines[next_line_index]
-                    next_match = re.search(r'X([-+]?\d*\.?\d+)\s*Y([-+]?\d*\.?\d+)\s*E([-+]?\d*\.?\d+)', next_line)
+                    next_match = re.search(pattern, next_line)
                     if next_match:
                         x2 = float(next_match.group(1))
                         y2 = float(next_match.group(2))
@@ -139,7 +143,7 @@ def process_gcode(input_file, amplitude, frequency):
     return modified_lines
 
 def save_gcode(output_file, lines):
-    with open(output_file, 'w') as file:
+    with open(output_file, mode='w+', encoding='UTF-8') as file:
         file.writelines(lines)
     logging.info(f"Saved modified G-code to: {output_file}")
 
